@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Clock, MapPin, AlertTriangle, Radio } from 'lucide-react';
-import { supabase, type Trip } from '../lib/supabase';
+import { Clock, MapPin, Radio } from 'lucide-react';
+import { tripsCol, query, orderBy, limit, getDocs, snapToArray, type Trip } from '../lib/firebase';
 import { formatDuration, formatLocalDate, formatLocalTime } from '../lib/geo';
 import { theme } from '../styles/theme';
 
@@ -19,16 +19,12 @@ export default function TripSelector({ onSelectTrip, selectedTripId }: TripSelec
 
   async function loadTrips() {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('trips')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .limit(20);
-
-    if (error) {
-      console.error('Failed to load trips:', error.message);
-    } else {
-      setTrips(data || []);
+    try {
+      const q = query(tripsCol, orderBy('started_at', 'desc'), limit(20));
+      const snap = await getDocs(q);
+      setTrips(snapToArray<Trip>(snap));
+    } catch (err) {
+      console.error('Failed to load trips:', err);
     }
     setLoading(false);
   }
@@ -45,14 +41,7 @@ export default function TripSelector({ onSelectTrip, selectedTripId }: TripSelec
 
   if (trips.length === 0) {
     return (
-      <div
-        style={{
-          textAlign: 'center',
-          padding: 40,
-          color: theme.colors.textMuted,
-          fontSize: 14,
-        }}
-      >
+      <div style={{ textAlign: 'center', padding: 40, color: theme.colors.textMuted, fontSize: 14 }}>
         No trips recorded yet
       </div>
     );
@@ -73,9 +62,7 @@ export default function TripSelector({ onSelectTrip, selectedTripId }: TripSelec
             onClick={() => onSelectTrip(trip)}
             style={{
               background: isSelected ? theme.colors.card : theme.colors.bg,
-              border: isSelected
-                ? `1px solid ${theme.colors.accent}`
-                : `1px solid ${theme.colors.border}`,
+              border: isSelected ? `1px solid ${theme.colors.accent}` : `1px solid ${theme.colors.border}`,
               borderRadius: theme.radius.md,
               padding: '14px 16px',
               cursor: 'pointer',
@@ -85,58 +72,28 @@ export default function TripSelector({ onSelectTrip, selectedTripId }: TripSelec
               overflow: 'hidden',
             }}
           >
-            {/* Active badge */}
             {isActive && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '3px 10px',
-                  borderRadius: theme.radius.full,
-                  background: 'rgba(5, 163, 87, 0.15)',
-                  color: theme.colors.green,
-                  fontSize: 11,
-                  fontWeight: 700,
-                  textTransform: 'uppercase',
-                }}
-              >
+              <div style={{
+                position: 'absolute', top: 12, right: 12,
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '3px 10px', borderRadius: theme.radius.full,
+                background: 'rgba(5, 163, 87, 0.15)',
+                color: theme.colors.green, fontSize: 11, fontWeight: 700, textTransform: 'uppercase',
+              }}>
                 <Radio size={10} style={{ animation: 'pulse-dot 2s ease-in-out infinite' }} />
                 Live
               </div>
             )}
 
-            {/* Route name */}
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 600,
-                color: theme.colors.textPrimary,
-                marginBottom: 6,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div style={{ fontSize: 15, fontWeight: 600, color: theme.colors.textPrimary, marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
               <MapPin size={14} color={theme.colors.accent} />
               {trip.route_name || 'Unnamed Trip'}
             </div>
 
-            {/* Date + time */}
-            <div
-              style={{
-                fontSize: 12,
-                color: theme.colors.textSecondary,
-                marginBottom: 8,
-              }}
-            >
+            <div style={{ fontSize: 12, color: theme.colors.textSecondary, marginBottom: 8 }}>
               {formatLocalDate(trip.started_at)} &middot; {formatLocalTime(trip.started_at)}
             </div>
 
-            {/* Stats row */}
             <div style={{ display: 'flex', gap: 16, fontSize: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: theme.colors.textMuted }}>
                 <Clock size={12} />

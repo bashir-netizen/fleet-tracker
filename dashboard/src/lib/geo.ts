@@ -1,4 +1,4 @@
-import type { LocationPing } from './supabase';
+import type { LocationPing } from './firebase';
 
 const R = 6371; // Earth radius in km
 

@@ -14,7 +14,11 @@ import AlertBanner from './components/AlertBanner';
 import AlertPanel from './components/AlertPanel';
 import TamperTimeline from './components/TamperTimeline';
 import { detectStopsUpTo, detectStops, type Stop } from './components/StopDetector';
-import { supabase, type Trip, type LocationPing, type Alert, type AgentEvent } from './lib/supabase';
+import {
+  db, agentsCol, alertsCol, eventsCol, doc, updateDoc,
+  query, where, orderBy, limit, getDocs, onSnapshot, snapToArray,
+  type Trip, type LocationPing, type Alert, type AgentEvent,
+} from './lib/firebase';
 import { formatDuration, formatSpeed, formatDistance, formatTimeAgo } from './lib/geo';
 import { batteryColor } from './lib/formatters';
 import { Crosshair, Bell, List, Battery, Wifi, Gauge, Route, Clock, Zap } from 'lucide-react';
@@ -43,39 +47,38 @@ export default function App() {
   // Load agent + alerts on mount
   useEffect(() => {
     async function init() {
-      const { data: agents } = await supabase.from('agents').select('id').limit(1);
-      if (agents && agents.length > 0) {
-        setAgentId(agents[0].id);
+      const agentSnap = await getDocs(query(agentsCol, limit(1)));
+      const agentsList = snapToArray<{ id: string }>(agentSnap);
+      if (agentsList.length > 0) {
+        const id = agentsList[0].id;
+        setAgentId(id);
+
         // Load alerts
-        const { data: alertData } = await supabase
-          .from('alerts')
-          .select('*')
-          .eq('agent_id', agents[0].id)
-          .order('timestamp', { ascending: false })
-          .limit(50);
-        if (alertData) setAlerts(alertData);
+        const alertSnap = await getDocs(query(alertsCol, where('agent_id', '==', id), orderBy('timestamp', 'desc'), limit(50)));
+        setAlerts(snapToArray<Alert>(alertSnap));
 
         // Load events
-        const { data: eventData } = await supabase
-          .from('agent_events')
-          .select('*')
-          .eq('agent_id', agents[0].id)
-          .order('timestamp', { ascending: false })
-          .limit(100);
-        if (eventData) setEvents(eventData);
+        const eventSnap = await getDocs(query(eventsCol, where('agent_id', '==', id), orderBy('timestamp', 'desc'), limit(100)));
+        setEvents(snapToArray<AgentEvent>(eventSnap));
       }
     }
     init();
 
-    // Subscribe to new alerts
-    const channel = supabase
-      .channel('alerts-global')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'alerts' }, (payload) => {
-        setAlerts(prev => [payload.new as Alert, ...prev]);
-      })
-      .subscribe();
+    // Subscribe to new alerts (Firestore realtime)
+    const alertQuery = query(alertsCol, orderBy('timestamp', 'desc'), limit(1));
+    const unsubAlerts = onSnapshot(alertQuery, (snap) => {
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          const alert = { ...change.doc.data(), id: change.doc.id } as Alert;
+          setAlerts(prev => {
+            if (prev.find(a => a.id === alert.id)) return prev;
+            return [alert, ...prev];
+          });
+        }
+      });
+    });
 
-    return () => { supabase.removeChannel(channel); };
+    return () => { unsubAlerts(); };
   }, []);
 
   // Ping gap detection for live mode
@@ -109,7 +112,7 @@ export default function App() {
     if (newMode === 'live') { setSelectedTrip(null); setReplayPings([]); }
   }, []);
   const handleDismissAlert = useCallback((alertId: string) => {
-    supabase.from('alerts').update({ acknowledged: true }).eq('id', alertId).then();
+    updateDoc(doc(alertsCol, alertId), { acknowledged: true }).catch(console.error);
     setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
   }, []);
 

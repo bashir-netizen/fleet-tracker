@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, X, ShieldAlert } from 'lucide-react';
-import type { Alert } from '../lib/supabase';
+import type { Alert } from '../lib/firebase';
 import { severityColor, eventTypeLabel } from '../lib/formatters';
 import { formatLocalTime } from '../lib/geo';
 import { theme } from '../styles/theme';

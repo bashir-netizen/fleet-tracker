@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import * as Battery from 'expo-battery';
-import { supabase } from './lib/supabase';
+import { agentsCol, getDocs, query, limit } from './lib/supabase';
 import { startTracking, stopTracking, isLocationEnabled } from './lib/locationService';
 import { startTrip, endTrip, getActiveTrip, type ActiveTrip } from './lib/tripManager';
 import { getQueuedCount, flushQueue } from './lib/offlineQueue';
@@ -43,9 +43,9 @@ export default function App() {
   useEffect(() => {
     async function init() {
       // Get agent
-      const { data } = await supabase.from('agents').select('id').limit(1);
-      if (data && data.length > 0) {
-        setAgentId(data[0].id);
+      const snap = await getDocs(query(agentsCol, limit(1)));
+      if (!snap.empty) {
+        setAgentId(snap.docs[0].id);
       }
 
       // Check for active trip from previous session

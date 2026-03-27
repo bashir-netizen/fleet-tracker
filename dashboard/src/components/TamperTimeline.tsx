@@ -1,4 +1,4 @@
-import type { AgentEvent } from '../lib/supabase';
+import type { AgentEvent } from '../lib/firebase';
 import { theme } from '../styles/theme';
 import { eventSeverity } from '../lib/formatters';
 

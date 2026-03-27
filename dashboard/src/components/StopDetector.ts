@@ -8,7 +8,7 @@
  * Same function powers both live (incremental) and replay (batch) modes.
  */
 
-import type { LocationPing } from '../lib/supabase';
+import type { LocationPing } from '../lib/firebase';
 
 const STOP_SPEED_THRESHOLD = 2; // km/h
 const STOP_START_COUNT = 3; // consecutive slow pings to trigger stop
