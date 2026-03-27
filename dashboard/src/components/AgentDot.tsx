@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import { theme } from '../styles/theme';
 
 type AgentStatus = 'normal' | 'warning' | 'critical' | 'offline';
 
 interface AgentDotProps {
-  map: maplibregl.Map | null;
+  map: mapboxgl.Map | null;
   lat: number;
   lng: number;
   heading: number | null;
@@ -23,7 +23,7 @@ function statusRingColor(status: AgentStatus): string {
 }
 
 export default function AgentDot({ map, lat, lng, heading, status, visible }: AgentDotProps) {
-  const markerRef = useRef<maplibregl.Marker | null>(null);
+  const markerRef = useRef<mapboxgl.Marker | null>(null);
   const elRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -81,7 +81,7 @@ export default function AgentDot({ map, lat, lng, heading, status, visible }: Ag
       container.appendChild(arrow);
 
       elRef.current = container;
-      markerRef.current = new maplibregl.Marker({ element: container })
+      markerRef.current = new mapboxgl.Marker({ element: container })
         .setLngLat([lng, lat])
         .addTo(map);
     } else {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import {
   db, pingsCol, eventsCol, tripsCol,
   query, where, orderBy, limit, getDocs, onSnapshot, snapToArray,
@@ -11,7 +11,7 @@ import AgentDot from './AgentDot';
 import { processPing, createDetectorState, type StopDetectorState, type Stop } from './StopDetector';
 
 interface LiveTrackerProps {
-  map: maplibregl.Map | null;
+  map: mapboxgl.Map | null;
   agentId: string | null;
   onStopsChange?: (stops: Stop[]) => void;
   onStatsChange?: (stats: LiveStats) => void;

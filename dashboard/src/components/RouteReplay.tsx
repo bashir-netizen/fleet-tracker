@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import { pingsCol, query, where, orderBy, getDocs, snapToArray, type LocationPing, type Trip } from '../lib/firebase';
 import { lerpCoords, bearing, totalDistance, formatDuration, formatSpeed, formatDistance } from '../lib/geo';
 import { getSpeedColor, theme } from '../styles/theme';
 
 interface RouteReplayProps {
-  map: maplibregl.Map | null;
+  map: mapboxgl.Map | null;
   trip: Trip | null;
   onPingsLoaded?: (pings: LocationPing[]) => void;
   onCurrentIndex?: (index: number) => void;
@@ -15,14 +15,16 @@ const SPEED_OPTIONS = [5, 10, 25, 50];
 
 export default function RouteReplay({ map, trip, onPingsLoaded, onCurrentIndex }: RouteReplayProps) {
   const [pings, setPings] = useState<LocationPing[]>([]);
+  const pingsRef = useRef<LocationPing[]>([]);
   const [loading, setLoading] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(10);
+  const speedRef = useRef(10);
   const [currentIndex, setCurrentIndex] = useState(0);
   const animRef = useRef<number>(0);
   const lastFrameRef = useRef<number>(0);
   const indexRef = useRef(0);
-  const markerRef = useRef<maplibregl.Marker | null>(null);
+  const markerRef = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
     if (!trip) return;
@@ -42,11 +44,13 @@ export default function RouteReplay({ map, trip, onPingsLoaded, onCurrentIndex }
       const q = query(pingsCol, where('trip_id', '==', tripId), orderBy('timestamp', 'asc'));
       const snap = await getDocs(q);
       const loadedPings = snapToArray<LocationPing>(snap);
+      console.log('Loaded pings:', loadedPings.length, loadedPings[0]?.lat, loadedPings[0]?.lng);
+      pingsRef.current = loadedPings;
       setPings(loadedPings);
       onPingsLoaded?.(loadedPings);
 
       if (map && loadedPings.length > 0) {
-        const bounds = new maplibregl.LngLatBounds();
+        const bounds = new mapboxgl.LngLatBounds();
         loadedPings.forEach(p => bounds.extend([p.lng, p.lat]));
         map.fitBounds(bounds, { padding: 80, duration: 1000 });
       }
@@ -105,7 +109,7 @@ export default function RouteReplay({ map, trip, onPingsLoaded, onCurrentIndex }
         geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [p2.lng, p2.lat]] },
       });
     }
-    const source = map.getSource('replay-trail') as maplibregl.GeoJSONSource;
+    const source = map.getSource('replay-trail') as mapboxgl.GeoJSONSource;
     source?.setData({ type: 'FeatureCollection', features });
   }, [map, pings]);
 
@@ -114,35 +118,40 @@ export default function RouteReplay({ map, trip, onPingsLoaded, onCurrentIndex }
     if (!markerRef.current) {
       const el = document.createElement('div');
       el.style.cssText = `width:24px;height:24px;border-radius:50%;background:#9B59B6;border:3px solid #FFF;box-shadow:0 0 12px rgba(155,89,182,0.6);`;
-      markerRef.current = new maplibregl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
+      markerRef.current = new mapboxgl.Marker({ element: el }).setLngLat([lng, lat]).addTo(map);
     } else {
       markerRef.current.setLngLat([lng, lat]);
     }
   }, [map]);
 
+  useEffect(() => { speedRef.current = speed; }, [speed]);
+
   useEffect(() => {
-    if (!playing || pings.length < 2) return;
+    if (!playing) return;
+    const p = pingsRef.current;
+    if (p.length < 2) return;
     lastFrameRef.current = performance.now();
     function frame(now: number) {
+      const p = pingsRef.current;
       const dt = (now - lastFrameRef.current) / 1000;
       lastFrameRef.current = now;
-      indexRef.current = Math.min(indexRef.current + dt * speed / 10, pings.length - 1);
+      indexRef.current = Math.min(indexRef.current + dt * speedRef.current / 10, p.length - 1);
       const idx = Math.floor(indexRef.current);
       const frac = indexRef.current - idx;
-      if (idx < pings.length - 1) {
-        const [lat, lng] = lerpCoords(pings[idx].lat, pings[idx].lng, pings[idx + 1].lat, pings[idx + 1].lng, frac);
-        updateMarker(lat, lng, bearing(pings[idx].lat, pings[idx].lng, pings[idx + 1].lat, pings[idx + 1].lng));
+      if (idx < p.length - 1) {
+        const [lat, lng] = lerpCoords(p[idx].lat, p[idx].lng, p[idx + 1].lat, p[idx + 1].lng, frac);
+        updateMarker(lat, lng, bearing(p[idx].lat, p[idx].lng, p[idx + 1].lat, p[idx + 1].lng));
       } else {
-        updateMarker(pings[idx].lat, pings[idx].lng, null);
+        updateMarker(p[idx].lat, p[idx].lng, null);
       }
       updateTrail(idx + 1);
       setCurrentIndex(idx);
-      if (indexRef.current >= pings.length - 1) { setPlaying(false); return; }
+      if (indexRef.current >= p.length - 1) { setPlaying(false); return; }
       animRef.current = requestAnimationFrame(frame);
     }
     animRef.current = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(animRef.current);
-  }, [playing, speed, pings, updateMarker, updateTrail]);
+  }, [playing, updateMarker, updateTrail]);
 
   function handleSeek(value: number) {
     indexRef.current = value;

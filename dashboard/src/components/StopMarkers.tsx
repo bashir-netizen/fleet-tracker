@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import type { Stop } from './StopDetector';
 import { formatDuration, formatLocalTime } from '../lib/geo';
 import { theme } from '../styles/theme';
 
 interface StopMarkersProps {
-  map: maplibregl.Map | null;
+  map: mapboxgl.Map | null;
   stops: Stop[];
 }
 
@@ -24,7 +24,7 @@ function stopSize(durationMs: number): number {
 }
 
 export default function StopMarkers({ map, stops }: StopMarkersProps) {
-  const markersRef = useRef<maplibregl.Marker[]>([]);
+  const markersRef = useRef<mapboxgl.Marker[]>([]);
 
   useEffect(() => {
     // Clear old markers
@@ -59,7 +59,7 @@ export default function StopMarkers({ map, stops }: StopMarkersProps) {
       `;
       el.textContent = String(stop.number);
 
-      const popup = new maplibregl.Popup({
+      const popup = new mapboxgl.Popup({
         offset: size / 2 + 8,
         closeButton: false,
         className: 'stop-popup',
@@ -105,7 +105,7 @@ export default function StopMarkers({ map, stops }: StopMarkersProps) {
         </div>
       `);
 
-      const marker = new maplibregl.Marker({ element: el })
+      const marker = new mapboxgl.Marker({ element: el })
         .setLngLat([stop.centerLng, stop.centerLat])
         .setPopup(popup)
         .addTo(map);

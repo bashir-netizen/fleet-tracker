@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import Map, { type MapStyleKey } from './components/Map';
 import TopBar, { type ViewMode } from './components/TopBar';
 import SidePanel from './components/SidePanel';
@@ -42,7 +42,7 @@ export default function App() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [alertPanelOpen, setAlertPanelOpen] = useState(false);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
 
   // Load agent + alerts on mount
   useEffect(() => {
@@ -98,7 +98,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [mode, liveStats?.lastPingTime, agentId]);
 
-  const handleMapReady = useCallback((map: maplibregl.Map) => { mapRef.current = map; }, []);
+  const handleMapReady = useCallback((map: mapboxgl.Map) => { mapRef.current = map; }, []);
   const handleRecenter = useCallback(() => {
     mapRef.current?.easeTo({ center: DEFAULT_CENTER, zoom: 13, duration: 1000 });
   }, []);

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import maplibregl from 'maplibre-gl';
+import mapboxgl from 'mapbox-gl';
 import { MapPin } from 'lucide-react';
 import type { Stop } from './StopDetector';
 import { formatDuration, formatLocalTime } from '../lib/geo';
@@ -7,7 +7,7 @@ import { theme } from '../styles/theme';
 
 interface StopLogProps {
   stops: Stop[];
-  map: maplibregl.Map | null;
+  map: mapboxgl.Map | null;
 }
 
 function stopColor(durationMs: number): string {

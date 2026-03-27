@@ -78,7 +78,7 @@ html, body, #root {
 }
 
 /* MapLibre overrides for dark theme */
-.maplibregl-ctrl-group {
+.mapboxgl-ctrl-group {
   background: rgba(26, 29, 39, 0.85) !important;
   backdrop-filter: blur(20px) !important;
   border: 1px solid rgba(255, 255, 255, 0.06) !important;
@@ -86,26 +86,26 @@ html, body, #root {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3) !important;
 }
 
-.maplibregl-ctrl-group button {
+.mapboxgl-ctrl-group button {
   border: none !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
 }
 
-.maplibregl-ctrl-group button:last-child {
+.mapboxgl-ctrl-group button:last-child {
   border-bottom: none !important;
 }
 
-.maplibregl-ctrl-group button span {
+.mapboxgl-ctrl-group button span {
   filter: invert(1) !important;
 }
 
-.maplibregl-ctrl-attrib {
+.mapboxgl-ctrl-attrib {
   background: rgba(26, 29, 39, 0.6) !important;
   color: #5E5E63 !important;
   font-size: 10px !important;
 }
 
-.maplibregl-ctrl-attrib a {
+.mapboxgl-ctrl-attrib a {
   color: #8E8E93 !important;
 }
 

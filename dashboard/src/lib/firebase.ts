@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app';
 import {
   getFirestore, collection, doc, addDoc, setDoc, updateDoc,
   query, where, orderBy, limit, getDocs, onSnapshot,
-  Timestamp, type DocumentData, type QuerySnapshot,
+  Timestamp, type QueryDocumentSnapshot, type QuerySnapshot,
 } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -78,14 +78,9 @@ export interface Alert {
   created_at: string;
 }
 
-// ── Helper: doc to typed object ─────────────────────────────────
-function docToObj<T>(doc: DocumentData): T {
-  const data = doc.data();
-  return { ...data, id: doc.id } as T;
-}
-
+// ── Helper: snapshot to typed array ──────────────────────────────
 export function snapToArray<T>(snap: QuerySnapshot): T[] {
-  return snap.docs.map(d => docToObj<T>(d));
+  return snap.docs.map(d => ({ ...d.data(), id: d.id }) as T);
 }
 
 // ── Re-exports for convenience ──────────────────────────────────

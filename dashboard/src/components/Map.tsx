@@ -1,13 +1,14 @@
 import { useEffect, useRef, useCallback } from 'react';
-import maplibregl from 'maplibre-gl';
-import 'maplibre-gl/dist/maplibre-gl.css';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+// @ts-ignore - mapbox-gl types
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || '';
 
 export const MAP_STYLES = {
-  dark: `https://api.mapbox.com/styles/v1/mapbox/dark-v11?access_token=${MAPBOX_TOKEN}`,
-  streets: `https://api.mapbox.com/styles/v1/mapbox/streets-v12?access_token=${MAPBOX_TOKEN}`,
-  satellite: `https://api.mapbox.com/styles/v1/mapbox/satellite-streets-v12?access_token=${MAPBOX_TOKEN}`,
+  dark: 'mapbox://styles/mapbox/dark-v11',
+  streets: 'mapbox://styles/mapbox/streets-v12',
+  satellite: 'mapbox://styles/mapbox/satellite-streets-v12',
 } as const;
 
 export type MapStyleKey = keyof typeof MAP_STYLES;
@@ -17,18 +18,18 @@ const DEFAULT_CENTER: [number, number] = [43.1456, 11.5880];
 const DEFAULT_ZOOM = 13;
 
 interface MapProps {
-  onMapReady?: (map: maplibregl.Map) => void;
+  onMapReady?: (map: mapboxgl.Map) => void;
   style?: MapStyleKey;
 }
 
 export default function Map({ onMapReady, style = 'dark' }: MapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
 
   const initMap = useCallback(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    const map = new maplibregl.Map({
+    const map = new mapboxgl.Map({
       container: containerRef.current,
       style: MAP_STYLES[style],
       center: DEFAULT_CENTER,
@@ -38,8 +39,8 @@ export default function Map({ onMapReady, style = 'dark' }: MapProps) {
       bearing: 0,
     });
 
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-left');
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'bottom-right');
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
 
     map.on('load', () => {
       onMapReady?.(map);
@@ -78,8 +79,8 @@ export default function Map({ onMapReady, style = 'dark' }: MapProps) {
 }
 
 export function useMapInstance() {
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const setMap = useCallback((map: maplibregl.Map) => {
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const setMap = useCallback((map: mapboxgl.Map) => {
     mapRef.current = map;
   }, []);
   return { mapRef, setMap };
