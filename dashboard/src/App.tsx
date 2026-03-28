@@ -46,6 +46,7 @@ export default function App() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
   const [alertPanelOpen, setAlertPanelOpen] = useState(false);
+  const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
   const isToday = selectedDate === todayStr();
@@ -169,7 +170,7 @@ export default function App() {
     return { score, totalMs, distance: totalDistance(pings), pingCount: pings.length, stopCount: longStops.length };
   }, [pings, events, longStops]);
 
-  const handleMapReady = useCallback((map: mapboxgl.Map) => { mapRef.current = map; }, []);
+  const handleMapReady = useCallback((map: mapboxgl.Map) => { mapRef.current = map; setMapInstance(map); }, []);
   const handleRecenter = useCallback(() => {
     if (pings.length > 0 && mapRef.current) {
       const bounds = new mapboxgl.LngLatBounds();
@@ -237,7 +238,7 @@ export default function App() {
       </div>
 
       {/* Stop markers (>3 min only) */}
-      <StopMarkers map={mapRef.current} stops={longStops} />
+      <StopMarkers map={mapInstance} stops={longStops} />
 
       {/* Side panel */}
       <SidePanel title="Shift Overview">
@@ -294,7 +295,7 @@ export default function App() {
           }}>
             Stops ({'>'}3 min)
           </div>
-          <StopLog stops={longStops} map={mapRef.current} />
+          <StopLog stops={longStops} map={mapInstance} />
         </div>
       </SidePanel>
     </div>

@@ -18,9 +18,9 @@ function stopColor(durationMs: number): string {
 
 function stopSize(durationMs: number): number {
   const min = durationMs / 60000;
-  if (min < 2) return 28;
-  if (min < 5) return 36;
-  return 44;
+  if (min < 5) return 26;
+  if (min < 10) return 30;
+  return 34;
 }
 
 export default function StopMarkers({ map, stops }: StopMarkersProps) {
@@ -31,33 +31,46 @@ export default function StopMarkers({ map, stops }: StopMarkersProps) {
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
+    console.log('StopMarkers render:', { mapExists: !!map, stopCount: stops.length });
     if (!map || stops.length === 0) return;
 
     stops.forEach((stop, i) => {
+      console.log('Adding marker #' + stop.number, stop.centerLat, stop.centerLng);
       const color = stopColor(stop.durationMs);
       const size = stopSize(stop.durationMs);
       const isOngoing = !stop.departureTime;
 
       const el = document.createElement('div');
-      el.style.cssText = `
-        width: ${size}px;
-        height: ${size}px;
-        border-radius: 50%;
-        background: ${theme.colors.bg};
-        border: 3px solid ${color};
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #FFFFFF;
-        font-size: ${size > 36 ? 16 : 13}px;
-        font-weight: 700;
-        font-family: 'Inter', sans-serif;
-        cursor: pointer;
-        animation: fade-in-scale 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-        box-shadow: 0 0 12px ${color}44;
-        ${isOngoing ? 'animation: pulse-glow 2s ease-in-out infinite;' : ''}
+      el.innerHTML = `
+        <div style="
+          display: flex; flex-direction: column; align-items: center;
+          cursor: pointer;
+          filter: drop-shadow(0 4px 12px rgba(0,0,0,0.7));
+        ">
+          <div style="
+            width: ${size}px;
+            height: ${size}px;
+            border-radius: 50%;
+            background: ${color};
+            border: 3px solid #FFFFFF;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-size: ${size > 28 ? 14 : 12}px;
+            font-weight: 800;
+            font-family: Inter, sans-serif;
+            line-height: 1;
+          ">${stop.number}</div>
+          <div style="
+            width: 0; height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 8px solid #FFFFFF;
+            margin-top: -2px;
+          "></div>
+        </div>
       `;
-      el.textContent = String(stop.number);
 
       const popup = new mapboxgl.Popup({
         offset: size / 2 + 8,
@@ -105,10 +118,15 @@ export default function StopMarkers({ map, stops }: StopMarkersProps) {
         </div>
       `);
 
-      const marker = new mapboxgl.Marker({ element: el })
+      const marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([stop.centerLng, stop.centerLat])
         .setPopup(popup)
         .addTo(map);
+
+      // Force marker visibility
+      const markerEl = marker.getElement();
+      markerEl.style.zIndex = '100';
+      markerEl.style.pointerEvents = 'auto';
 
       markersRef.current.push(marker);
     });
