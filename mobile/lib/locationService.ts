@@ -2,7 +2,6 @@ import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
 import * as Battery from 'expo-battery';
 import { randomUUID } from 'expo-crypto';
-import { supabase } from './supabase';
 import { queuePing, type QueuedPing } from './offlineQueue';
 
 const LOCATION_TASK = 'fleet-background-location';
@@ -75,6 +74,7 @@ async function processLocation(loc: Location.LocationObject): Promise<void> {
     battery_level: batteryLevel,
     heading: loc.coords.heading ?? null,
     timestamp: new Date(now).toISOString(),
+    created_at: new Date(now).toISOString(),
   };
 
   // Try direct upload, fall back to queue

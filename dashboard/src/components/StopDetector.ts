@@ -13,6 +13,7 @@ import type { LocationPing } from '../lib/firebase';
 const STOP_SPEED_THRESHOLD = 2; // km/h
 const STOP_START_COUNT = 3; // consecutive slow pings to trigger stop
 const STOP_END_COUNT = 2; // consecutive fast pings to end stop
+export const LONG_STOP_THRESHOLD_MS = 3 * 60 * 1000; // 3 minutes — only these get pins/log entries
 
 export interface Stop {
   number: number;

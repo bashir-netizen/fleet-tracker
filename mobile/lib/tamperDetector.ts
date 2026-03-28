@@ -21,6 +21,7 @@ function createEvent(eventType: string, metadata?: Record<string, unknown>): Que
     event_type: eventType,
     metadata: metadata || null,
     timestamp: new Date().toISOString(),
+    created_at: new Date().toISOString(),
   };
 }
 
@@ -121,10 +122,12 @@ export function checkGpsQuality(accuracy: number) {
 async function sendHeartbeat() {
   const battery = Math.round((await Battery.getBatteryLevelAsync().catch(() => 0)) * 100);
   const netState = await NetInfo.fetch();
+  const gpsOn = await Location.hasServicesEnabledAsync().catch(() => false);
   await queueEvent(createEvent('heartbeat', {
     battery,
     network: netState.isConnected,
     networkType: netState.type,
+    gps_enabled: gpsOn,
   }));
 }
 
@@ -146,8 +149,8 @@ export function startAllMonitors(agent: string, trip: string | null) {
   // App state
   startAppStateMonitor();
 
-  // Heartbeat every 60s
-  heartbeatInterval = setInterval(sendHeartbeat, 60000);
+  // Heartbeat every 30s — tighter monitoring
+  heartbeatInterval = setInterval(sendHeartbeat, 30000);
 }
 
 export function stopAllMonitors() {
