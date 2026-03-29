@@ -6,52 +6,54 @@ import SidePanel from './components/SidePanel';
 import LayerSwitcher from './components/LayerSwitcher';
 import StopMarkers from './components/StopMarkers';
 import StopLog from './components/StopLog';
-import LiveTracker, { type LiveStats } from './components/LiveTracker';
+import ShiftCard from './components/ShiftCard';
 import AlertBanner from './components/AlertBanner';
 import AlertPanel from './components/AlertPanel';
 import TamperTimeline from './components/TamperTimeline';
 import { detectStops, type Stop, LONG_STOP_THRESHOLD_MS } from './components/StopDetector';
-import AgentDot from './components/AgentDot';
 import {
-  db, agentsCol, alertsCol, eventsCol, pingsCol, doc, updateDoc,
+  agentsCol, alertsCol, eventsCol, pingsCol, tripsCol, doc, updateDoc,
   query, where, orderBy, limit, getDocs, onSnapshot, snapToArray,
   type Trip, type LocationPing, type Alert, type AgentEvent,
 } from './lib/firebase';
-import { formatDuration, formatSpeed, formatDistance, formatTimeAgo, totalDistance, cleanTrailPings } from './lib/geo';
+import { formatDuration, formatDistance, totalDistance, cleanTrailPings } from './lib/geo';
 import { getSpeedColor, theme } from './styles/theme';
-import { batteryColor } from './lib/formatters';
 import { Crosshair, Bell, Battery, Gauge, Route, Clock } from 'lucide-react';
 import './index.css';
 
 const DEFAULT_CENTER: [number, number] = [43.1456, 11.5880];
 
-function todayStr(): string {
-  return new Date().toISOString().split('T')[0];
-}
+function todayStr(): string { return new Date().toISOString().split('T')[0]; }
 
 function dayRange(dateStr: string): { start: string; end: string } {
   const start = dateStr + 'T00:00:00.000Z';
   const d = new Date(dateStr + 'T12:00:00');
   d.setDate(d.getDate() + 1);
-  const end = d.toISOString().split('T')[0] + 'T00:00:00.000Z';
-  return { start, end };
+  return { start, end: d.toISOString().split('T')[0] + 'T00:00:00.000Z' };
+}
+
+interface ShiftData {
+  shift: Trip;
+  pings: LocationPing[];
+  stops: Stop[];
+  longStops: Stop[];
 }
 
 export default function App() {
   const [mapStyle, setMapStyle] = useState<MapStyleKey>('dark');
   const [selectedDate, setSelectedDate] = useState(todayStr());
   const [agentId, setAgentId] = useState<string | null>(null);
-  const [pings, setPings] = useState<LocationPing[]>([]);
+  const [shifts, setShifts] = useState<ShiftData[]>([]);
+  const [selectedShiftIdx, setSelectedShiftIdx] = useState(0);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [liveStats, setLiveStats] = useState<LiveStats | null>(null);
   const [alertPanelOpen, setAlertPanelOpen] = useState(false);
   const [mapInstance, setMapInstance] = useState<mapboxgl.Map | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
 
   const isToday = selectedDate === todayStr();
 
-  // Load agent on mount
+  // Load agent
   useEffect(() => {
     async function init() {
       const snap = await getDocs(query(agentsCol, limit(1)));
@@ -61,141 +63,210 @@ export default function App() {
     init();
   }, []);
 
-  // Load data for selected date
+  // Load shifts + pings for selected date
   useEffect(() => {
     if (!agentId) return;
     const { start, end } = dayRange(selectedDate);
 
     async function loadDay() {
-      // Load pings
-      const pingsQ = query(pingsCol, where('agent_id', '==', agentId), where('timestamp', '>=', start), where('timestamp', '<', end), orderBy('timestamp', 'asc'));
-      const pingsSnap = await getDocs(pingsQ);
-      const dayPings = snapToArray<LocationPing>(pingsSnap);
-      setPings(dayPings);
+      // 1. Get all shifts for this day
+      const shiftsQ = query(tripsCol, where('agent_id', '==', agentId), where('started_at', '>=', start), where('started_at', '<', end), orderBy('started_at', 'asc'));
+      const shiftsSnap = await getDocs(shiftsQ);
+      const dayShifts = snapToArray<Trip>(shiftsSnap);
 
-      // Load alerts
+      // 2. Load pings for each shift
+      const shiftDataArr: ShiftData[] = [];
+      let globalStopNum = 1;
+
+      for (const shift of dayShifts) {
+        const pingsQ = query(pingsCol, where('trip_id', '==', shift.id), orderBy('timestamp', 'asc'));
+        const pingsSnap = await getDocs(pingsQ);
+        const shiftPings = snapToArray<LocationPing>(pingsSnap);
+
+        // Detect stops for this shift independently
+        const stops = detectStops(shiftPings);
+
+        // Close open final stop if shift is ended
+        if (shift.ended_at && stops.length > 0) {
+          const lastStop = stops[stops.length - 1];
+          if (!lastStop.departureTime && shiftPings.length > 0) {
+            lastStop.departureTime = shiftPings[shiftPings.length - 1].timestamp;
+            lastStop.durationMs = new Date(lastStop.departureTime).getTime() - new Date(lastStop.arrivalTime).getTime();
+          }
+        }
+
+        // Renumber stops globally across shifts
+        stops.forEach(s => { s.number = globalStopNum++; });
+
+        const longStops = stops.filter(s => s.durationMs >= LONG_STOP_THRESHOLD_MS);
+        shiftDataArr.push({ shift, pings: shiftPings, stops, longStops });
+      }
+
+      setShifts(shiftDataArr);
+      setSelectedShiftIdx(shiftDataArr.length > 0 ? shiftDataArr.length - 1 : 0); // Select latest shift
+
+      // 3. Load alerts + events for the day
       const alertsQ = query(alertsCol, where('agent_id', '==', agentId), where('timestamp', '>=', start), where('timestamp', '<', end), orderBy('timestamp', 'desc'));
-      const alertsSnap = await getDocs(alertsQ);
-      setAlerts(snapToArray<Alert>(alertsSnap));
+      setAlerts(snapToArray<Alert>(await getDocs(alertsQ)));
 
-      // Load events
       const eventsQ = query(eventsCol, where('agent_id', '==', agentId), where('timestamp', '>=', start), where('timestamp', '<', end), orderBy('timestamp', 'desc'));
-      const eventsSnap = await getDocs(eventsQ);
-      setEvents(snapToArray<AgentEvent>(eventsSnap));
+      setEvents(snapToArray<AgentEvent>(await getDocs(eventsQ)));
 
-      // Fit map to pings
-      if (mapRef.current && dayPings.length > 0) {
+      // Fit map to all pings
+      const allPings = shiftDataArr.flatMap(s => s.pings);
+      if (mapRef.current && allPings.length > 0) {
         const bounds = new mapboxgl.LngLatBounds();
-        dayPings.forEach(p => bounds.extend([p.lng, p.lat]));
+        allPings.forEach(p => bounds.extend([p.lng, p.lat]));
         mapRef.current.fitBounds(bounds, { padding: 80, duration: 1000 });
       }
     }
     loadDay();
 
-    // Realtime for today
+    // Realtime for today — listen for new pings on active shift
     if (isToday) {
       const pingsQ = query(pingsCol, where('agent_id', '==', agentId), orderBy('timestamp', 'desc'), limit(1));
       const unsub = onSnapshot(pingsQ, (snap) => {
         snap.docChanges().forEach(change => {
           if (change.type === 'added') {
             const ping = { ...change.doc.data(), id: change.doc.id } as LocationPing;
-            setPings(prev => {
-              if (prev.find(p => p.id === ping.id)) return prev;
-              return [...prev, ping];
+            setShifts(prev => {
+              if (prev.length === 0) return prev;
+              // Add to the shift that matches this ping's trip_id
+              return prev.map(sd => {
+                if (sd.shift.id !== ping.trip_id) return sd;
+                if (sd.pings.find(p => p.id === ping.id)) return sd;
+                const newPings = [...sd.pings, ping];
+                const newStops = detectStops(newPings);
+                const newLongStops = newStops.filter(s => s.durationMs >= LONG_STOP_THRESHOLD_MS);
+                return { ...sd, pings: newPings, stops: newStops, longStops: newLongStops };
+              });
             });
           }
         });
       });
-      return () => unsub();
+
+      // Also listen for new shifts starting
+      const shiftsQ = query(tripsCol, where('agent_id', '==', agentId), where('started_at', '>=', dayRange(selectedDate).start), orderBy('started_at', 'desc'), limit(1));
+      const unsubShifts = onSnapshot(shiftsQ, (snap) => {
+        snap.docChanges().forEach(change => {
+          if (change.type === 'added') {
+            const newShift = { ...change.doc.data(), id: change.doc.id } as Trip;
+            setShifts(prev => {
+              if (prev.find(s => s.shift.id === newShift.id)) return prev;
+              const newData: ShiftData = { shift: newShift, pings: [], stops: [], longStops: [] };
+              const updated = [...prev, newData];
+              setSelectedShiftIdx(updated.length - 1);
+              return updated;
+            });
+          }
+        });
+      });
+
+      return () => { unsub(); unsubShifts(); };
     }
   }, [agentId, selectedDate]);
 
-  // Draw trail on map
+  // Draw trails for ALL shifts on map
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || pings.length < 2) return;
+    if (!map) return;
 
-    const drawTrail = () => {
-      try {
-        if (map.getLayer('day-trail-glow')) map.removeLayer('day-trail-glow');
-        if (map.getLayer('day-trail')) map.removeLayer('day-trail');
-        if (map.getSource('day-trail')) map.removeSource('day-trail');
-      } catch { /* ok */ }
-
-      // Clean trail — collapse stationary jitter into single points
-      const clean = cleanTrailPings(pings);
-      const features: GeoJSON.Feature[] = clean.slice(0, -1).map((p1, i) => ({
-        type: 'Feature',
-        properties: { color: getSpeedColor(p1.speed ?? 0) },
-        geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [clean[i + 1].lng, clean[i + 1].lat]] },
-      }));
-
-      map.addSource('day-trail', { type: 'geojson', data: { type: 'FeatureCollection', features } });
-      map.addLayer({
-        id: 'day-trail-glow', type: 'line', source: 'day-trail',
-        paint: { 'line-color': ['get', 'color'], 'line-width': 10, 'line-opacity': 0.3, 'line-blur': 8 },
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+    const drawTrails = () => {
+      // Remove old layers
+      shifts.forEach((_, i) => {
+        try {
+          if (map.getLayer(`trail-glow-${i}`)) map.removeLayer(`trail-glow-${i}`);
+          if (map.getLayer(`trail-${i}`)) map.removeLayer(`trail-${i}`);
+          if (map.getSource(`trail-${i}`)) map.removeSource(`trail-${i}`);
+        } catch { /* ok */ }
       });
-      map.addLayer({
-        id: 'day-trail', type: 'line', source: 'day-trail',
-        paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': 0.9 },
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
+      // Also clean up any extras from previous render
+      for (let i = shifts.length; i < shifts.length + 5; i++) {
+        try {
+          if (map.getLayer(`trail-glow-${i}`)) map.removeLayer(`trail-glow-${i}`);
+          if (map.getLayer(`trail-${i}`)) map.removeLayer(`trail-${i}`);
+          if (map.getSource(`trail-${i}`)) map.removeSource(`trail-${i}`);
+        } catch { /* ok */ }
+      }
+
+      shifts.forEach((sd, i) => {
+        if (sd.pings.length < 2) return;
+        const clean = cleanTrailPings(sd.pings);
+        const features: GeoJSON.Feature[] = clean.slice(0, -1).map((p1, j) => ({
+          type: 'Feature',
+          properties: { color: getSpeedColor(p1.speed ?? 0) },
+          geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [clean[j + 1].lng, clean[j + 1].lat]] },
+        }));
+
+        map.addSource(`trail-${i}`, { type: 'geojson', data: { type: 'FeatureCollection', features } });
+        map.addLayer({
+          id: `trail-glow-${i}`, type: 'line', source: `trail-${i}`,
+          paint: { 'line-color': ['get', 'color'], 'line-width': 10, 'line-opacity': 0.3, 'line-blur': 8 },
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+        });
+        map.addLayer({
+          id: `trail-${i}`, type: 'line', source: `trail-${i}`,
+          paint: { 'line-color': ['get', 'color'], 'line-width': 4, 'line-opacity': 0.9 },
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+        });
       });
     };
 
-    if (map.isStyleLoaded()) drawTrail();
-    else map.on('style.load', drawTrail);
+    if (map.isStyleLoaded()) drawTrails();
+    else map.on('style.load', drawTrails);
 
     return () => {
-      try {
-        if (map.getLayer('day-trail-glow')) map.removeLayer('day-trail-glow');
-        if (map.getLayer('day-trail')) map.removeLayer('day-trail');
-        if (map.getSource('day-trail')) map.removeSource('day-trail');
-      } catch { /* ok */ }
+      shifts.forEach((_, i) => {
+        try {
+          if (map.getLayer(`trail-glow-${i}`)) map.removeLayer(`trail-glow-${i}`);
+          if (map.getLayer(`trail-${i}`)) map.removeLayer(`trail-${i}`);
+          if (map.getSource(`trail-${i}`)) map.removeSource(`trail-${i}`);
+        } catch { /* ok */ }
+      });
     };
-  }, [pings]);
+  }, [shifts]);
 
-  // Compute stops (only >3 min for display)
-  const allStops = useMemo(() => detectStops(pings), [pings]);
-  const longStops = useMemo(() => allStops.filter(s => s.durationMs >= LONG_STOP_THRESHOLD_MS), [allStops]);
+  // Aggregate data
+  const allPings = useMemo(() => shifts.flatMap(s => s.pings), [shifts]);
+  const allLongStops = useMemo(() => shifts.flatMap(s => s.longStops), [shifts]);
+  const selectedShift = shifts[selectedShiftIdx] || null;
 
-  // Shift integrity
-  const shiftIntegrity = useMemo(() => {
-    if (pings.length < 2) return null;
-    const shiftStart = new Date(pings[0].timestamp).getTime();
-    const shiftEnd = new Date(pings[pings.length - 1].timestamp).getTime();
-    const totalMs = shiftEnd - shiftStart;
-    if (totalMs <= 0) return null;
-    const expectedHeartbeats = Math.floor(totalMs / 30000);
-    const heartbeats = events.filter(e => e.event_type === 'heartbeat').length;
-    const score = expectedHeartbeats > 0 ? Math.min(100, Math.round((heartbeats / expectedHeartbeats) * 100)) : 100;
-    return { score, totalMs, distance: totalDistance(pings), pingCount: pings.length, stopCount: longStops.length };
-  }, [pings, events, longStops]);
+  const daySummary = useMemo(() => {
+    if (allPings.length < 2) return null;
+    const totalMs = shifts.reduce((sum, sd) => {
+      const end = sd.shift.ended_at ? new Date(sd.shift.ended_at).getTime() : Date.now();
+      return sum + (end - new Date(sd.shift.started_at).getTime());
+    }, 0);
+    return {
+      totalMs,
+      distance: totalDistance(allPings),
+      stopCount: allLongStops.length,
+      shiftCount: shifts.length,
+      pingCount: allPings.length,
+    };
+  }, [shifts, allPings, allLongStops]);
 
   const handleMapReady = useCallback((map: mapboxgl.Map) => { mapRef.current = map; setMapInstance(map); }, []);
   const handleRecenter = useCallback(() => {
-    if (pings.length > 0 && mapRef.current) {
+    if (allPings.length > 0 && mapRef.current) {
       const bounds = new mapboxgl.LngLatBounds();
-      pings.forEach(p => bounds.extend([p.lng, p.lat]));
+      allPings.forEach(p => bounds.extend([p.lng, p.lat]));
       mapRef.current.fitBounds(bounds, { padding: 80, duration: 1000 });
     } else {
       mapRef.current?.easeTo({ center: DEFAULT_CENTER, zoom: 13, duration: 1000 });
     }
-  }, [pings]);
+  }, [allPings]);
   const handleDismissAlert = useCallback((alertId: string) => {
     updateDoc(doc(alertsCol, alertId), { acknowledged: true }).catch(console.error);
     setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, acknowledged: true } : a));
   }, []);
 
   const unackedAlertCount = alerts.filter(a => !a.acknowledged).length;
-  const lastPing = pings.length > 0 ? pings[pings.length - 1] : null;
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
       <Map style={mapStyle} onMapReady={handleMapReady} />
-
       <TopBar selectedDate={selectedDate} onDateChange={setSelectedDate} isToday={isToday} />
-
       <AlertBanner alerts={alerts} onDismiss={handleDismissAlert} />
 
       {/* Alert bell */}
@@ -221,12 +292,10 @@ export default function App() {
 
       <AlertPanel alerts={alerts} visible={alertPanelOpen} onClose={() => setAlertPanelOpen(false)} onAcknowledge={handleDismissAlert} />
 
-      {/* Layer switcher */}
       <div style={{ position: 'absolute', top: 16, right: 412, zIndex: 50 }}>
         <LayerSwitcher currentStyle={mapStyle} onStyleChange={setMapStyle} />
       </div>
 
-      {/* Re-center */}
       <div style={{ position: 'absolute', bottom: 32, right: 412, zIndex: 50 }}>
         <button onClick={handleRecenter} style={{
           width: 44, height: 44, borderRadius: theme.radius.sm,
@@ -239,12 +308,12 @@ export default function App() {
         </button>
       </div>
 
-      {/* Stop markers (>3 min only) */}
-      <StopMarkers map={mapInstance} stops={longStops} />
+      {/* Stop markers for all shifts */}
+      <StopMarkers map={mapInstance} stops={allLongStops} />
 
       {/* Side panel */}
       <SidePanel title="Shift Overview">
-        {/* Agent card */}
+        {/* Agent card + day summary */}
         <div style={{ background: theme.colors.card, borderRadius: theme.radius.md, padding: 20, marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <div style={{ width: 40, height: 40, borderRadius: '50%', background: theme.colors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700 }}>M</div>
@@ -252,26 +321,14 @@ export default function App() {
               <div style={{ fontWeight: 600, fontSize: 16 }}>Agent Moussa</div>
               <div style={{ color: theme.colors.textSecondary, fontSize: 13 }}>+253 77 00 00 01</div>
             </div>
-            {isToday && (
-              <div style={{
-                marginLeft: 'auto', padding: '4px 10px', borderRadius: theme.radius.full,
-                background: 'rgba(5, 163, 87, 0.15)', color: theme.colors.green, fontSize: 12, fontWeight: 600,
-              }}>Live</div>
-            )}
           </div>
 
-          {/* Day summary stats */}
-          {shiftIntegrity ? (
+          {daySummary ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <StatBox label="Distance" value={formatDistance(shiftIntegrity.distance)} icon={<Route size={12} />} />
-              <StatBox label="Duration" value={formatDuration(shiftIntegrity.totalMs)} icon={<Clock size={12} />} />
-              <StatBox label="Stops" value={String(shiftIntegrity.stopCount)} icon={<Gauge size={12} />} />
-              <StatBox
-                label="Integrity"
-                value={`${shiftIntegrity.score}%`}
-                valueColor={shiftIntegrity.score >= 90 ? theme.colors.green : shiftIntegrity.score >= 70 ? theme.colors.amber : theme.colors.red}
-                icon={<Battery size={12} />}
-              />
+              <StatBox label="Distance" value={formatDistance(daySummary.distance)} icon={<Route size={12} />} />
+              <StatBox label="Total Time" value={formatDuration(daySummary.totalMs)} icon={<Clock size={12} />} />
+              <StatBox label="Stops" value={String(daySummary.stopCount)} icon={<Gauge size={12} />} />
+              <StatBox label="Shifts" value={String(daySummary.shiftCount)} icon={<Battery size={12} />} />
             </div>
           ) : (
             <div style={{ color: theme.colors.textMuted, fontSize: 13, textAlign: 'center', padding: 20 }}>
@@ -280,25 +337,51 @@ export default function App() {
           )}
         </div>
 
-        {/* Tamper timeline */}
-        {pings.length > 0 && events.length > 0 && (
+        {/* Shift cards */}
+        {shifts.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: theme.colors.textSecondary, marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Shifts
+            </div>
+            {shifts.map((sd, i) => (
+              <ShiftCard
+                key={sd.shift.id}
+                shift={sd.shift}
+                pings={sd.pings}
+                stopCount={sd.longStops.length}
+                isActive={!sd.shift.ended_at}
+                isSelected={i === selectedShiftIdx}
+                onSelect={() => {
+                  setSelectedShiftIdx(i);
+                  if (sd.pings.length > 0 && mapRef.current) {
+                    const bounds = new mapboxgl.LngLatBounds();
+                    sd.pings.forEach(p => bounds.extend([p.lng, p.lat]));
+                    mapRef.current.fitBounds(bounds, { padding: 80, duration: 1000 });
+                  }
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Tamper timeline for selected shift */}
+        {selectedShift && selectedShift.pings.length > 0 && events.length > 0 && (
           <TamperTimeline
-            events={events}
-            tripStartTime={pings[0].timestamp}
-            tripEndTime={pings[pings.length - 1].timestamp}
+            events={events.filter(e => e.trip_id === selectedShift.shift.id)}
+            tripStartTime={selectedShift.shift.started_at}
+            tripEndTime={selectedShift.shift.ended_at}
           />
         )}
 
-        {/* Stop log (>3 min) */}
-        <div>
-          <div style={{
-            fontSize: 14, fontWeight: 600, color: theme.colors.textSecondary,
-            marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px',
-          }}>
-            Stops ({'>'}3 min)
+        {/* Stops for selected shift */}
+        {selectedShift && (
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: theme.colors.textSecondary, marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Stops ({'>'}3 min)
+            </div>
+            <StopLog stops={selectedShift.longStops} map={mapInstance} />
           </div>
-          <StopLog stops={longStops} map={mapInstance} />
-        </div>
+        )}
       </SidePanel>
     </div>
   );
