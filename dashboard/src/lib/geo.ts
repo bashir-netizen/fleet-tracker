@@ -91,3 +91,48 @@ export function formatLocalDate(timestamp: string): string {
     year: 'numeric',
   });
 }
+
+/**
+ * Clean trail pings — collapse stationary clusters into single points
+ * and remove micro-jitter. This fixes zigzag lines when stationary.
+ */
+export function cleanTrailPings(pings: LocationPing[]): LocationPing[] {
+  if (pings.length < 2) return pings;
+
+  const cleaned: LocationPing[] = [];
+  let i = 0;
+
+  while (i < pings.length) {
+    const speed = pings[i].speed ?? 0;
+
+    if (speed < 2) {
+      // Stationary cluster — find all consecutive stationary pings
+      let j = i;
+      while (j < pings.length && (pings[j].speed ?? 0) < 2) j++;
+
+      // Average the cluster to a single point
+      const cluster = pings.slice(i, j);
+      const avgLat = cluster.reduce((s, p) => s + p.lat, 0) / cluster.length;
+      const avgLng = cluster.reduce((s, p) => s + p.lng, 0) / cluster.length;
+
+      // Emit one ping for the cluster (first one with averaged coords)
+      cleaned.push({ ...cluster[0], lat: avgLat, lng: avgLng });
+      // Also emit the last one so the trail connects to the next moving segment
+      if (cluster.length > 1) {
+        cleaned.push({ ...cluster[cluster.length - 1], lat: avgLat, lng: avgLng });
+      }
+      i = j;
+    } else {
+      // Moving — keep but apply minimum distance filter
+      if (cleaned.length > 0) {
+        const last = cleaned[cleaned.length - 1];
+        const dist = haversine(last.lat, last.lng, pings[i].lat, pings[i].lng) * 1000; // meters
+        if (dist < 5) { i++; continue; } // Skip micro-jitter
+      }
+      cleaned.push(pings[i]);
+      i++;
+    }
+  }
+
+  return cleaned;
+}

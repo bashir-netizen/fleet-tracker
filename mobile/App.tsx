@@ -8,7 +8,7 @@ import * as Location from 'expo-location';
 import NetInfo from '@react-native-community/netinfo';
 import * as Battery from 'expo-battery';
 import { agentsCol, getDocs, query, limit } from './lib/supabase';
-import { startTracking, stopTracking, isLocationEnabled } from './lib/locationService';
+import { startTracking, stopTracking, isLocationEnabled, setTrackingIds } from './lib/locationService';
 import { startShift, endShift, getActiveShift, type ActiveShift } from './lib/shiftManager';
 import { getQueuedCount, flushQueue } from './lib/offlineQueue';
 import { startAllMonitors, stopAllMonitors, updateTripId } from './lib/tamperDetector';
@@ -42,7 +42,7 @@ export default function App() {
       const snap = await getDocs(query(agentsCol, limit(1)));
       if (!snap.empty) setAgentId(snap.docs[0].id);
       const shift = await getActiveShift();
-      if (shift) { setActiveShift(shift); setScreen('tracking'); startAllMonitors(shift.agent_id, shift.id); }
+      if (shift) { setActiveShift(shift); setScreen('tracking'); await setTrackingIds(shift.agent_id, shift.id); startAllMonitors(shift.agent_id, shift.id); }
       setBattery(Math.round((await Battery.getBatteryLevelAsync()) * 100));
       setLocationOn(await isLocationEnabled());
     }
@@ -81,6 +81,7 @@ export default function App() {
     const shift = await startShift(agentId, confirmLat, confirmLng);
     if (!shift) { Alert.alert('Error', 'Failed to start shift'); setScreen('idle'); return; }
     setActiveShift(shift); updateTripId(shift.id);
+    await setTrackingIds(agentId, shift.id);
     const started = await startTracking();
     if (started) { setScreen('tracking'); startAllMonitors(agentId, shift.id); }
     else { Alert.alert('Permission Required', 'Background location permission is needed'); setScreen('idle'); }

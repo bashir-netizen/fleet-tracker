@@ -17,7 +17,7 @@ import {
   query, where, orderBy, limit, getDocs, onSnapshot, snapToArray,
   type Trip, type LocationPing, type Alert, type AgentEvent,
 } from './lib/firebase';
-import { formatDuration, formatSpeed, formatDistance, formatTimeAgo, totalDistance } from './lib/geo';
+import { formatDuration, formatSpeed, formatDistance, formatTimeAgo, totalDistance, cleanTrailPings } from './lib/geo';
 import { getSpeedColor, theme } from './styles/theme';
 import { batteryColor } from './lib/formatters';
 import { Crosshair, Bell, Battery, Gauge, Route, Clock } from 'lucide-react';
@@ -122,10 +122,12 @@ export default function App() {
         if (map.getSource('day-trail')) map.removeSource('day-trail');
       } catch { /* ok */ }
 
-      const features: GeoJSON.Feature[] = pings.slice(0, -1).map((p1, i) => ({
+      // Clean trail — collapse stationary jitter into single points
+      const clean = cleanTrailPings(pings);
+      const features: GeoJSON.Feature[] = clean.slice(0, -1).map((p1, i) => ({
         type: 'Feature',
         properties: { color: getSpeedColor(p1.speed ?? 0) },
-        geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [pings[i + 1].lng, pings[i + 1].lat]] },
+        geometry: { type: 'LineString', coordinates: [[p1.lng, p1.lat], [clean[i + 1].lng, clean[i + 1].lat]] },
       }));
 
       map.addSource('day-trail', { type: 'geojson', data: { type: 'FeatureCollection', features } });
